@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/integrations/supabase/client'
-import { supabaseShapePro } from '@/integrations/supabase/shapeProClient'
 import { useToast } from '@/hooks/use-toast'
 
 export interface Meal {
@@ -32,46 +31,9 @@ export function useMeals() {
 
   const fetchMeals = async () => {
     try {
-      console.log('🔄 Fetching meals from Shape Pro...')
+      console.log('🔄 Fetching meals...')
       setLoading(true)
 
-      // Tentar buscar do Shape Pro primeiro (tabela meals)
-      const { data: shapeProData, error: shapeProError } = await supabaseShapePro
-        .from('meals')
-        .select('*')
-        .order('name', { ascending: true })
-
-      if (!shapeProError && shapeProData && shapeProData.length > 0) {
-        console.log(`✅ Fetched ${shapeProData.length} meals from Shape Pro`)
-        // Mapear dados do Shape Pro para interface Meal
-        const mapped = shapeProData.map((m: any) => ({
-          id: m.id,
-          name: m.name,
-          description: m.description,
-          category: m.category,
-          calories: m.calories || m.calories_per_100g || 0,
-          protein: m.protein || m.proteins_per_100g || 0,
-          carbs: m.carbs || m.carbs_per_100g || 0,
-          fat: m.fat || m.fats_per_100g || 0,
-          fiber: m.fiber || m.fiber_per_100g,
-          sodium: m.sodium || m.sodium_per_100g,
-          sugar: m.sugar,
-          ingredients: m.ingredients,
-          instructions: m.instructions,
-          portion_amount: m.portion_amount,
-          portion_unit: m.portion_unit,
-          time: m.time,
-          image_url: m.image_url,
-          created_by: m.created_by,
-          created_at: m.created_at,
-        })) as Meal[]
-        setMeals(mapped)
-        return
-      }
-
-      console.log('⚠️ Shape Pro error or empty, trying local...', shapeProError?.message)
-
-      // Fallback para tabela local
       const { data, error } = await supabase
         .from('meals')
         .select('*')
@@ -81,7 +43,7 @@ export function useMeals() {
         console.error('❌ Error fetching meals:', error)
         throw error
       }
-      console.log(`✅ Fetched ${data?.length || 0} meals from local`)
+      console.log(`✅ Fetched ${data?.length || 0} meals`)
       setMeals(data || [])
     } catch (error) {
       console.error('Error fetching meals:', error)

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/integrations/supabase/client'
-import { supabaseShapePro } from '@/integrations/supabase/shapeProClient'
 import { useToast } from '@/hooks/use-toast'
 import { sanitizeExerciseData, validateExerciseData } from '@/lib/predefinitionsMapping'
 
@@ -32,32 +31,19 @@ export function useExercises() {
 
   const fetchExercises = async () => {
     try {
-      console.log('🔄 Fetching exercises from Shape Pro...')
+      console.log('🔄 Fetching exercises...')
       setLoading(true)
 
-      // Buscar exercícios do Shape Pro (projeto externo)
-      const { data: shapeProData, error: shapeProError } = await supabaseShapePro
+      const { data, error } = await supabase
         .from('exercises')
         .select('*')
         .order('name', { ascending: true })
 
-      if (shapeProError) {
-        console.warn('⚠️ Error fetching from Shape Pro:', shapeProError)
-        // Fallback: tentar buscar do projeto local
-        const { data: localData, error: localError } = await supabase
-          .from('exercises')
-          .select('*')
-          .order('name', { ascending: true })
+      if (error) throw error
 
-        if (localError) throw localError
-        console.log(`✅ Fetched ${localData?.length || 0} exercises from local`)
-        setExercises((localData || []) as Exercise[])
-        return
-      }
-
-      console.log(`✅ Fetched ${shapeProData?.length || 0} exercises from Shape Pro`)
-      console.log(`🎥 Exercises with video: ${shapeProData?.filter(e => e.video_url).length || 0}`)
-      setExercises((shapeProData || []) as Exercise[])
+      console.log(`✅ Fetched ${data?.length || 0} exercises`)
+      console.log(`🎥 Exercises with video: ${data?.filter(e => e.video_url).length || 0}`)
+      setExercises((data || []) as Exercise[])
     } catch (error) {
       console.error('Error fetching exercises:', error)
       toast({ title: 'Erro', description: 'Não foi possível carregar os exercícios', variant: 'destructive' })
