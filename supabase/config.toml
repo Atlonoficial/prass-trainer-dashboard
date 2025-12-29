@@ -1,0 +1,65 @@
+project_id = "vrzmfhwzoeutokzyypwv"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[auth]
+enabled = true
+# Site URL - CONFIGURAR: Seu domínio de produção
+site_url = "https://seu-dominio.com"
+additional_redirect_urls = [
+  "https://seu-dominio.com/dashboard/auth/confirm",
+  "https://seu-dominio.com/dashboard/auth/reset-password",
+  "https://seu-dominio.com/app/auth/confirm",
+  "https://seu-dominio.com/app/auth/reset-password",
+  "appmodelo://app/auth/confirm",
+  "appmodelo://app/auth/reset-password",
+  "https://localhost:3000",
+  "http://localhost:3000",
+  "http://localhost:3000/auth"
+]
+jwt_expiry = 3600
+enable_signup = true
+
+[functions.atlon-assistant]
+verify_jwt = true
+
+[functions.ai-assistant]
+verify_jwt = true
+
+[functions.create-checkout-session]
+verify_jwt = true
+
+[functions.process-payment-webhook]
+verify_jwt = false
+
+[functions.onesignal-notifications]
+verify_jwt = true
+
+[functions.send-invitation-email]
+verify_jwt = true
+
+[functions.check-expired-subscriptions]
+verify_jwt = false
+
+[functions.send-expiry-reminders]
+verify_jwt = false
+
+[functions.auto-renew-subscriptions]
+verify_jwt = false
+
+[functions.save-payment-config]
+verify_jwt = true
+
+[functions.check-overdue-charges]
+verify_jwt = false
+
+[functions.check-auto-reset-points]
+verify_jwt = false
+
+[functions.cleanup-orphaned-videos]
+verify_jwt = true

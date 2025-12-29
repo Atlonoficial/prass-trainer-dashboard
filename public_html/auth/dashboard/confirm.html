@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirmando Email - Dashboard Professor</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 500px;
+      width: 100%;
+      padding: 40px;
+      text-align: center;
+    }
+
+    .logo {
+      width: 120px;
+      height: auto;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      color: #1a202c;
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid #e2e8f0;
+      border-top-color: #667eea;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 24px auto;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .message {
+      color: #4a5568;
+      font-size: 16px;
+      line-height: 1.6;
+      margin-top: 16px;
+    }
+
+    .success {
+      color: #38a169;
+      font-weight: 600;
+    }
+
+    .error {
+      color: #e53e3e;
+      font-weight: 600;
+    }
+
+    .icon {
+      font-size: 48px;
+      margin: 16px 0;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <img src="https://prasstrainer.com.br/logo.png" alt="Logo" class="logo" onerror="this.style.display='none'">
+    <h1 id="title">Confirmando seu email...</h1>
+    <div id="spinner" class="spinner"></div>
+    <p id="message" class="message">Aguarde enquanto validamos sua confirmação.</p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // ============================================
+    // CONFIGURAÇÃO (TROCAR AQUI)
+    // ============================================
+    const CONFIG = {
+      SUPABASE_URL: 'https://YOUR_PROJECT_ID.supabase.co',
+      SUPABASE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJxYm9wa3F6a2F2aG1lbmpsaGFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5MjEwMTQsImV4cCI6MjA3MDQ5NzAxNH0.AeqAVWHVqyAn7wxNvHeuQFkJREHUTB9fZP22qpv73d0',
+      BASE_DOMAIN: 'https://prasstrainer.com.br',
+      REDIRECT_PATH: '/professor/dashboard' // Rota após confirmação
+    };
+
+    // ============================================
+    // ELEMENTOS DOM
+    // ============================================
+    const elements = {
+      title: document.getElementById('title'),
+      spinner: document.getElementById('spinner'),
+      message: document.getElementById('message')
+    };
+
+    // ============================================
+    // INICIALIZAR SUPABASE
+    // ============================================
+    const { createClient } = supabase;
+    const supabaseClient = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
+
+    // ============================================
+    // EXTRAIR PARÂMETROS DA URL
+    // ============================================
+    function getUrlParams() {
+      const params = new URLSearchParams(window.location.search);
+      return {
+        token_hash: params.get('token_hash'),
+        type: params.get('type'),
+        slug: params.get('slug') || '',
+        src: params.get('src') || 'dashboard'
+      };
+    }
+
+    // ============================================
+    // GERAR URL DE REDIRECIONAMENTO
+    // ============================================
+    function getRedirectUrl(slug) {
+      // Se tiver slug, redireciona para /{slug}/dashboard
+      // Senão, redireciona para /professor/dashboard
+      if (slug) {
+        return `${CONFIG.BASE_DOMAIN}/${slug}/dashboard`;
+      }
+      return `${CONFIG.BASE_DOMAIN}${CONFIG.REDIRECT_PATH}`;
+    }
+
+    // ============================================
+    // MOSTRAR SUCESSO
+    // ============================================
+    function showSuccess(slug) {
+      elements.spinner.style.display = 'none';
+      elements.title.textContent = 'Email confirmado! ✓';
+      elements.title.className = 'success';
+
+      const icon = document.createElement('div');
+      icon.className = 'icon';
+      icon.textContent = '✅';
+      elements.spinner.parentNode.insertBefore(icon, elements.spinner);
+
+      elements.message.innerHTML = 'Redirecionando para o dashboard...<br><small>Aguarde alguns segundos</small>';
+      elements.message.className = 'message success';
+
+      setTimeout(() => {
+        window.location.href = getRedirectUrl(slug);
+      }, 2000);
+    }
+
+    // ============================================
+    // MOSTRAR ERRO
+    // ============================================
+    function showError(errorMessage) {
+      elements.spinner.style.display = 'none';
+      elements.title.textContent = 'Erro na confirmação ✗';
+      elements.title.className = 'error';
+
+      const icon = document.createElement('div');
+      icon.className = 'icon';
+      icon.textContent = '❌';
+      elements.spinner.parentNode.insertBefore(icon, elements.spinner);
+
+      elements.message.textContent = errorMessage || 'Link inválido ou expirado. Solicite um novo email de confirmação.';
+      elements.message.className = 'message error';
+
+      // Redirecionar para página de login após 5 segundos
+      setTimeout(() => {
+        window.location.href = `${CONFIG.BASE_DOMAIN}/auth`;
+      }, 5000);
+    }
+
+    // ============================================
+    // CONFIRMAR EMAIL
+    // ============================================
+    async function confirmEmail() {
+      const params = getUrlParams();
+
+      console.log('[Dashboard Confirm] Parâmetros recebidos:', params);
+
+      // Validar parâmetros obrigatórios
+      if (!params.token_hash || !params.type) {
+        console.error('[Dashboard Confirm] Parâmetros inválidos');
+        showError('Link de confirmação inválido.');
+        return;
+      }
+
+      try {
+        // Verificar token com Supabase
+        const { data, error } = await supabaseClient.auth.verifyOtp({
+          token_hash: params.token_hash,
+          type: params.type === 'signup' ? 'signup' : 'email'
+        });
+
+        if (error) {
+          console.error('[Dashboard Confirm] Erro Supabase:', error);
+          showError(error.message);
+          return;
+        }
+
+        if (!data.user) {
+          console.error('[Dashboard Confirm] Usuário não encontrado');
+          showError('Não foi possível confirmar o email.');
+          return;
+        }
+
+        console.log('[Dashboard Confirm] Confirmação bem-sucedida:', data.user.email);
+        showSuccess(params.slug);
+
+      } catch (error) {
+        console.error('[Dashboard Confirm] Erro inesperado:', error);
+        showError('Erro ao processar confirmação. Tente novamente.');
+      }
+    }
+
+    // ============================================
+    // EXECUTAR AO CARREGAR
+    // ============================================
+    confirmEmail();
+  </script>
+</body>
+
+</html>
