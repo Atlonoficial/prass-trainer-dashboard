@@ -53,20 +53,35 @@ export function useUnifiedPaymentSystem() {
   // FASE 3: State para controle de período do gráfico
   const [chartPeriodDays, setChartPeriodDays] = useState(180); // Padrão: 6 meses
 
+  // DEBUG: Log raw data from appState
+  console.log('[UnifiedPaymentSystem] Raw appState data:', {
+    stateExists: !!appState?.state,
+    students: appState?.state?.students?.length || 0,
+    studentsWithPayments: appState?.state?.studentsWithPayments?.length || 0,
+    transactions: appState?.state?.transactions?.length || 0,
+    plans: appState?.state?.plans?.length || 0,
+    directStudents: appState?.students?.length || 0,
+    directStudentsWithPayments: appState?.studentsWithPayments?.length || 0
+  });
+
   // Proteção defensiva contra inicialização
-  const state = appState?.state || {
-    user: null,
-    userProfile: null,
-    students: [],
-    transactions: [],
-    subscriptions: [],
-    plans: [],
-    paymentMetrics: null,
-    paymentSettings: null,
-    loading: { auth: false, data: false, payments: false, sync: false },
-    error: null,
-    cache: {
+  // IMPORTANTE: Usar appState.students diretamente (que vem do UnifiedAppProvider)
+  // em vez de appState.state.students (que pode estar desatualizado devido a timing do React)
+  const state = {
+    user: appState?.user || null,
+    userProfile: appState?.userProfile || null,
+    students: appState?.students || [],
+    studentsWithPayments: appState?.studentsWithPayments || [],
+    transactions: appState?.state?.transactions || [],
+    subscriptions: appState?.state?.subscriptions || [],
+    plans: appState?.state?.plans || [],
+    paymentMetrics: appState?.state?.paymentMetrics || null,
+    paymentSettings: appState?.state?.paymentSettings || null,
+    loading: appState?.state?.loading || { auth: false, data: false, payments: false, sync: false },
+    error: appState?.state?.error || null,
+    cache: appState?.state?.cache || {
       students: null,
+      studentsWithPayments: null,
       transactions: null,
       subscriptions: null,
       plans: null,
@@ -310,13 +325,43 @@ export function useUnifiedPaymentSystem() {
   }, [actions, toast, performanceStats]);
 
   // FASE 2: Real-time computed data with error boundaries
+  // Prioriza studentsWithPayments já calculados pelo UnifiedAppProvider
   const studentsWithPayments = useMemo((): StudentWithPayments[] => {
     try {
-      console.log('[UnifiedPaymentSystem] Computing students with payments...', {
+      // Se já temos studentsWithPayments pré-calculados do UnifiedAppProvider, usar eles
+      if (state?.studentsWithPayments && state.studentsWithPayments.length > 0) {
+        console.log('[UnifiedPaymentSystem] Using pre-calculated studentsWithPayments from UnifiedAppProvider:', {
+          count: state.studentsWithPayments.length
+        });
+
+        // Mapear para o formato esperado pelo componente
+        return state.studentsWithPayments.map((student: any) => ({
+          id: student.id || student.user_id,
+          user_id: student.user_id || student.id,
+          name: student.name || student.profiles?.name || 'Aluno',
+          email: student.email || student.profiles?.email || '',
+          paymentStatus: student.paymentStatus || student.status || 'inactive',
+          nextPaymentDate: student.nextPaymentDate || student.next_payment_date || '',
+          overdueAmount: student.overdueAmount || student.overdue_amount || 0,
+          totalPending: student.totalPending || student.total_pending || 0,
+          amount: student.amount || student.plan_price || 0,
+          planName: student.planName || student.plan_name || 'Sem plano',
+          lastPaymentDate: student.lastPaymentDate || student.last_payment_date,
+          subscription: student.subscription
+        }));
+      }
+
+      // Fallback: calcular localmente se não há dados pré-calculados
+      console.log('[UnifiedPaymentSystem] Computing students with payments locally...', {
         studentsCount: state?.students?.length || 0,
         transactionsCount: state?.transactions?.length || 0,
         plansCount: state?.plans?.length || 0
       });
+
+      if (!state?.students || state.students.length === 0) {
+        console.log('[UnifiedPaymentSystem] No students available, returning empty array');
+        return [];
+      }
 
       return (state?.students || []).map(student => {
         // Corrigir acesso aos dados do profile que vem como nested object
@@ -337,17 +382,25 @@ export function useUnifiedPaymentSystem() {
         const lastPayment = studentTransactions
           .filter(t => t.status === 'paid')
           .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+        // Usar dados do student para determinar status
+        const membershipStatus = (student as any).membership_status;
+        const membershipExpiry = (student as any).membership_expiry;
+        const planPrice = (student as any).active_plan_price || 100;
+        const planName = (student as any).active_plan || 'Plano Básico';
+        const daysSincePayment = lastPayment
+          ? Math.floor((Date.now() - new Date(lastPayment.created_at).getTime()) / (1000 * 60 * 60 * 24))
+          : 999;
+
         // Status inteligente baseado em membership
         let finalStatus: 'paid' | 'due_soon' | 'overdue' | 'inactive' = 'inactive';
 
         if (membershipStatus === 'active') {
-          // STRICT CHECK: Se o plano é pago e não tem histórico de pagamento, não considerar 'paid'
-          // Isso corrige o caso de alunos que aparecem como ativos mas nunca pagaram
           const isPaidPlan = planPrice > 0;
           const hasPaymentHistory = !!lastPayment;
 
           if (isPaidPlan && !hasPaymentHistory) {
-            finalStatus = 'due_soon'; // Cobraça pendente
+            finalStatus = 'due_soon';
           } else if (membershipExpiry) {
             const daysToExpiry = Math.floor(
               (new Date(membershipExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
@@ -368,7 +421,6 @@ export function useUnifiedPaymentSystem() {
         } else if (membershipStatus === 'expiring_soon') {
           finalStatus = 'due_soon';
         } else {
-          // Fallback para lógica baseada em transações
           finalStatus = daysSincePayment > 30 ? 'overdue'
             : daysSincePayment > 25 ? 'due_soon'
               : daysSincePayment <= 5 ? 'paid'
@@ -391,7 +443,7 @@ export function useUnifiedPaymentSystem() {
 
         const subscription = (state?.subscriptions || []).find(s => s.student_user_id === student.user_id);
 
-        const result = {
+        return {
           id: student.id,
           user_id: student.user_id,
           name: studentName,
@@ -405,16 +457,12 @@ export function useUnifiedPaymentSystem() {
           lastPaymentDate: lastPayment?.created_at,
           subscription
         };
-
-        console.log('[UnifiedPaymentSystem] Processed student result:', result);
-
-        return result;
       });
     } catch (error) {
       console.error('[UnifiedPaymentSystem] Error computing students with payments:', error);
       return [];
     }
-  }, [state?.students, state?.transactions, state?.subscriptions, state?.plans]);
+  }, [state?.students, state?.studentsWithPayments, state?.transactions, state?.subscriptions, state?.plans]);
 
   // FASE 2: Payment statistics with caching
   const paymentStats = useMemo((): PaymentStats => {

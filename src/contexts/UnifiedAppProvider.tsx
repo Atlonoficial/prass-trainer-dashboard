@@ -87,6 +87,7 @@ export function UnifiedAppProvider({ children }: { children: React.ReactNode }) 
 
   // Fetch students with circuit breaker and timeout
   const fetchStudents = async () => {
+    console.log('[UnifiedAppProvider] fetchStudents called:', { userId, userRole, willFetch: !!(userId && userRole === 'teacher') })
     if (!userId || userRole !== 'teacher') return
 
     // ✅ Circuit breaker check
@@ -115,21 +116,18 @@ export function UnifiedAppProvider({ children }: { children: React.ReactNode }) 
       return
     }
 
+
     try {
       performanceMonitor.start('fetch-students')
       setLoading('students', true)
 
       const { data, error } = await queryWithTimeout(
         async () => {
+          // Query includes orphan students (teacher_id is null) that can be auto-assigned
           const result = await supabase
             .from('students')
-            .select(`
-              *,
-              profiles:user_id (
-                id, name, email, user_type, created_at
-              )
-            `)
-            .eq('teacher_id', userId)
+            .select('*')
+            .or(`teacher_id.eq.${userId},teacher_id.is.null`)
             .order('created_at', { ascending: false })
           return result
         },
@@ -143,10 +141,35 @@ export function UnifiedAppProvider({ children }: { children: React.ReactNode }) 
         throw error
       }
 
+      // Fetch profiles separately and merge with student data
+      let studentsWithProfiles = (data as any) || []
+      if (studentsWithProfiles.length > 0) {
+        const userIds = studentsWithProfiles.map((s: any) => s.user_id).filter(Boolean)
+        if (userIds.length > 0) {
+          const { data: profilesData } = await supabase
+            .from('profiles')
+            .select('id, name, email, phone, avatar_url, user_type')
+            .in('id', userIds)
+
+          if (profilesData) {
+            const profilesMap = profilesData.reduce((acc: Record<string, any>, p: any) => {
+              acc[p.id] = p
+              return acc
+            }, {} as Record<string, any>)
+
+            // Merge profile data into students
+            studentsWithProfiles = studentsWithProfiles.map((student: any) => ({
+              ...student,
+              profiles: profilesMap[student.user_id] || null
+            }))
+          }
+        }
+      }
+
       recordSupabaseSuccess('fetchStudents')
       globalCircuitBreaker.recordSuccess('fetchStudents')
-      setStudents((data as any) || [])
-      cache.set(cacheKey, (data as any) || [])
+      setStudents(studentsWithProfiles)
+      cache.set(cacheKey, studentsWithProfiles)
     } catch (error) {
       console.error('Error fetching students:', error)
       recordSupabaseFailure('fetchStudents')
@@ -248,8 +271,9 @@ export function UnifiedAppProvider({ children }: { children: React.ReactNode }) 
     try {
       setLoading('payments', true)
 
-      // Fetch transactions, plans, and subscriptions in parallel
-      const [transactionsRes, plansRes, subscriptionsRes] = await Promise.all([
+      // Fetch transactions, plans, subscriptions AND students in parallel
+      // This ensures we always have fresh student data for payment calculations
+      const [transactionsRes, plansRes, subscriptionsRes, studentsRes] = await Promise.all([
         supabase
           .from('payment_transactions')
           .select('*')
@@ -266,22 +290,69 @@ export function UnifiedAppProvider({ children }: { children: React.ReactNode }) 
             *,
             plan_catalog!plan_id (*)
           `)
-          .eq('teacher_id', userId)
+          .eq('teacher_id', userId),
+        // Fetch fresh student data to ensure payment calculations are accurate
+        // Query includes orphan students (teacher_id is null) that can be auto-assigned
+        supabase
+          .from('students')
+          .select('*')
+          .or(`teacher_id.eq.${userId},teacher_id.is.null`)
+          .order('created_at', { ascending: false })
       ])
 
       if (transactionsRes.error) throw transactionsRes.error
       if (plansRes.error) throw plansRes.error
       if (subscriptionsRes.error) throw subscriptionsRes.error
+      // Don't throw on students error, use existing state as fallback
+
+      let freshStudents = studentsRes.data || students
+
+      // Fetch profiles separately and merge with student data
+      if (freshStudents.length > 0) {
+        const userIds = freshStudents.map((s: any) => s.user_id).filter(Boolean)
+        if (userIds.length > 0) {
+          const { data: profilesData } = await supabase
+            .from('profiles')
+            .select('id, name, email, phone, avatar_url, user_type')
+            .in('id', userIds)
+
+          if (profilesData) {
+            const profilesMap = profilesData.reduce((acc: Record<string, any>, p: any) => {
+              acc[p.id] = p
+              return acc
+            }, {} as Record<string, any>)
+
+            // Merge profile data into students
+            freshStudents = freshStudents.map((student: any) => ({
+              ...student,
+              profiles: profilesMap[student.user_id] || null
+            }))
+          }
+        }
+      }
+
+      // Update students state if we got fresh data
+      if (studentsRes.data && studentsRes.data.length > 0) {
+        setStudents(freshStudents as any)
+        const cacheKey = `students:${userId}`
+        cache.set(cacheKey, freshStudents as any)
+      }
 
       setTransactions(transactionsRes.data || [])
       setPlans(plansRes.data || [])
       setSubscriptions(subscriptionsRes.data || [])
 
-      // Calculate students with payment status
-      const studentsWithPaymentStatus = students.map(student =>
+      // Calculate students with payment status using fresh data
+      const studentsWithPaymentStatus = (freshStudents as Student[]).map(student =>
         calculateStudentPaymentStatus(student, subscriptionsRes.data || [], transactionsRes.data || [])
       )
       setStudentsWithPayments(studentsWithPaymentStatus)
+
+      console.log('[UnifiedAppProvider] Payment data loaded:', {
+        studentsCount: freshStudents.length,
+        transactionsCount: transactionsRes.data?.length || 0,
+        plansCount: plansRes.data?.length || 0
+      })
 
       // Calculate payment metrics
       const metrics = calculatePaymentMetrics(studentsWithPaymentStatus)
@@ -331,6 +402,7 @@ export function UnifiedAppProvider({ children }: { children: React.ReactNode }) 
 
   // Effect 2: Carrega dados de teacher APENAS quando userRole muda para 'teacher'
   useEffect(() => {
+    console.log('[UnifiedAppProvider] Effect 2 triggered:', { isAuthenticated, userId, userRole, willFetch: !!(isAuthenticated && userId && userRole === 'teacher') })
     if (isAuthenticated && userId && userRole === 'teacher') {
       fetchStudents()
       fetchPaymentData()
@@ -378,9 +450,10 @@ export function UnifiedAppProvider({ children }: { children: React.ReactNode }) 
 
         if (payload.eventType === 'INSERT') {
           // Fetch apenas o novo aluno com perfil
+          // Query without join - profiles:user_id relationship doesn't exist
           const { data: newStudent } = await supabase
             .from('students')
-            .select(`*, profiles:user_id (id, name, email, user_type, created_at)`)
+            .select('*')
             .eq('id', payload.new.id)
             .single()
 

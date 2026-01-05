@@ -266,8 +266,14 @@ export function useCourseModules(courseId?: string) {
 
       // Toast com ação de retry
       const isTimeout = error.message?.includes('timeout') || error.code === 'TIMEOUT';
+      const isTableNotFound = error.message?.includes('table') ||
+        error.message?.includes('relation') ||
+        error.code === '42P01' ||
+        error.code === 'PGRST200' ||
+        error.message?.includes('schema cache');
 
-      if (!localStorageCache) {
+      // Não mostrar toast se a tabela não existe (esperado em alguns ambientes)
+      if (!localStorageCache && !isTableNotFound) {
         toast({
           title: 'Erro ao carregar módulos',
           description: isTimeout
@@ -275,6 +281,8 @@ export function useCourseModules(courseId?: string) {
             : errorMessage,
           variant: 'destructive',
         });
+      } else if (isTableNotFound) {
+        console.log('ℹ️ [fetchModules] Table course_modules not found, this is expected if courses feature is not configured');
       }
     } finally {
       setLoading(false);

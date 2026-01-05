@@ -74,13 +74,25 @@ export function useComprehensiveEvaluations(studentId?: string) {
     try {
       setLoading(true)
 
+      // Primeiro, tentar verificar se a tabela existe com query simples
+      const { error: tableCheckError } = await supabase
+        .from('evaluations')
+        .select('id')
+        .limit(1)
+
+      // Se a tabela não existe ou há erro de relação, usar dados de progresso
+      if (tableCheckError) {
+        console.log('Evaluations table check failed, using progress data:', tableCheckError.message)
+        const progressEvaluations = await fetchProgressAsEvaluations()
+        setEvaluations(progressEvaluations)
+        setLoading(false)
+        return
+      }
+
+      // Tabela existe, buscar sem os relacionamentos problemáticos
       let query = supabase
         .from('evaluations')
-        .select(`
-          *,
-          template:evaluation_templates(*),
-          responses:evaluation_responses(*)
-        `)
+        .select('*')
         .order('evaluation_date', { ascending: false })
 
       // If studentId is provided, filter by that specific student
@@ -93,7 +105,14 @@ export function useComprehensiveEvaluations(studentId?: string) {
 
       const { data: evaluationsData, error } = await query
 
-      if (error) throw error
+      if (error) {
+        // Se houver erro, usar dados de progresso como fallback
+        console.log('Evaluations query failed, using progress data:', error.message)
+        const progressEvaluations = await fetchProgressAsEvaluations()
+        setEvaluations(progressEvaluations)
+        setLoading(false)
+        return
+      }
 
       // If no evaluations found, try to create from progress data
       if (!evaluationsData || evaluationsData.length === 0) {

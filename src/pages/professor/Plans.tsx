@@ -20,6 +20,24 @@ export default function ProfessorPlansPage() {
   const [selectedManagementPlan, setSelectedManagementPlan] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  // Calcular métricas - Hook deve vir ANTES de qualquer return condicional
+  const metrics = useMemo(() => {
+    const activeSubscriptions = subscriptions.filter(s => s.status === 'active');
+    const pendingSubscriptions = subscriptions.filter(s => s.status === 'pending');
+    const totalRevenue = plans.reduce((sum, plan) => {
+      const planSubs = activeSubscriptions.filter(s => s.plan_id === plan.id);
+      return sum + (planSubs.length * Number(plan.price));
+    }, 0);
+
+    return {
+      totalPlans: plans.length,
+      activePlans: plans.filter(p => p.is_active).length,
+      totalSubscriptions: activeSubscriptions.length,
+      pendingRequests: pendingSubscriptions.length,
+      monthlyRevenue: totalRevenue
+    };
+  }, [plans, subscriptions]);
+
   if (!isTeacher) {
     return (
       <div className="container mx-auto p-6">
@@ -34,24 +52,6 @@ export default function ProfessorPlansPage() {
       </div>
     );
   }
-
-  // Calcular métricas
-  const metrics = useMemo(() => {
-    const activeSubscriptions = subscriptions.filter(s => s.status === 'active');
-    const pendingSubscriptions = subscriptions.filter(s => s.status === 'pending');
-    const totalRevenue = plans.reduce((sum, plan) => {
-      const planSubs = activeSubscriptions.filter(s => s.plan_id === plan.id);
-      return sum + (planSubs.length * Number(plan.price));
-    }, 0);
-    
-    return {
-      totalPlans: plans.length,
-      activePlans: plans.filter(p => p.is_active).length,
-      totalSubscriptions: activeSubscriptions.length,
-      pendingRequests: pendingSubscriptions.length,
-      monthlyRevenue: totalRevenue
-    };
-  }, [plans, subscriptions]);
 
   const handleCreateOrUpdate = async (payload: any) => {
     try {
@@ -118,10 +118,10 @@ export default function ProfessorPlansPage() {
             <DialogHeader>
               <DialogTitle>{editingPlan ? "Editar Plano" : "Criar Novo Plano"}</DialogTitle>
             </DialogHeader>
-            <PlanForm 
-              initial={editingPlan} 
-              onSubmit={handleCreateOrUpdate} 
-              submitting={saving} 
+            <PlanForm
+              initial={editingPlan}
+              onSubmit={handleCreateOrUpdate}
+              submitting={saving}
             />
           </DialogContent>
         </Dialog>
@@ -192,7 +192,7 @@ export default function ProfessorPlansPage() {
           {plans.map((plan) => {
             const subscriberCount = getSubscriberCount(plan.id);
             const planIcon = getPlanIcon(plan.icon || 'crown');
-            
+
             return (
               <Card key={plan.id} className={`relative ${plan.highlighted ? 'ring-2 ring-primary' : ''}`}>
                 <CardHeader className="pb-3">
@@ -244,7 +244,7 @@ export default function ProfessorPlansPage() {
                   <div className="text-sm text-muted-foreground">
                     {plan.description || "Sem descrição"}
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <div className="text-2xl font-bold text-primary">
                       {plan.currency} {Number(plan.price).toFixed(2)}
@@ -280,8 +280,8 @@ export default function ProfessorPlansPage() {
                       <Eye className="h-4 w-4 mr-1" />
                       Ver
                     </Button>
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       className="flex-1"
                       onClick={() => setSelectedManagementPlan(plan)}
                     >
@@ -293,7 +293,7 @@ export default function ProfessorPlansPage() {
               </Card>
             );
           })}
-          
+
           {plans.length === 0 && (
             <Card className="col-span-full">
               <CardContent className="py-12 text-center">

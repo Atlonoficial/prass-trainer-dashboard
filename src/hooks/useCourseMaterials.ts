@@ -34,13 +34,25 @@ export function useCourseMaterials(courseId?: string) {
 
       if (error) throw error;
       setMaterials(data || []);
-    } catch (error) {
-      console.error('Error fetching materials:', error);
-      toast({
-        title: "Erro ao carregar materiais",
-        description: "Não foi possível carregar os materiais do curso.",
-        variant: "destructive",
-      });
+    } catch (error: any) {
+      // Check if error is due to missing table (table not found in schema)
+      const errorMessage = error?.message || '';
+      const isTableNotFound = errorMessage.includes('does not exist') ||
+        errorMessage.includes('relation') ||
+        errorMessage.includes('schema cache');
+
+      if (isTableNotFound) {
+        // Table doesn't exist yet - silently fail with empty array
+        console.info('[useCourseMaterials] Table course_materials does not exist yet');
+        setMaterials([]);
+      } else {
+        console.error('Error fetching materials:', error);
+        toast({
+          title: "Erro ao carregar materiais",
+          description: "Não foi possível carregar os materiais do curso.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setLoading(false);
     }
